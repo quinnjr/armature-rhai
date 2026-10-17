@@ -9,6 +9,24 @@ Earlier changes are recorded in the workspace [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
+### Security
+
+- `ScriptRouter` no longer returns script error details to clients: an unhandled script error yields a plain `500 Internal Server Error` body and the error is logged server-side.
+- The request span's `path` field records the path without its query string, so tokens or reset codes in the query no longer reach traces.
+- Every `RhaiEngine` is hardened: the `eval` function is disabled and `import` is refused unless enabled with `RhaiEngineBuilder::allow_imports(true)`, which confines imports to `scripts_dir` (no absolute paths, `..`, or symlinks leading outside).
+
+### Added
+
+- `harden_engine(&mut rhai::Engine)` (disable `eval`, refuse imports) and `SandboxedModuleResolver` (imports confined to one directory) for engines built outside `RhaiEngine`.
+- `EngineConfig::allow_imports` / `RhaiEngineBuilder::allow_imports`.
+
+### Changed
+
+- **Breaking:** scripts can no longer call `eval`, and `import` fails unless `allow_imports(true)` is set. Migration: call `.allow_imports(true)` and keep imported modules under `scripts_dir`; replace `eval` with real functions.
+- **Breaking:** `EngineConfig` gained the public field `allow_imports`; struct literals need `allow_imports: false` (or `..Default::default()`).
+
 ## [0.5.0] - 2026-09-15
 
 ### Changed

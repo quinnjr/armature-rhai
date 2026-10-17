@@ -378,7 +378,7 @@ mod tests {
         let middleware = ScriptMiddleware::after(engine, "after.rhai");
 
         let request = HttpRequest::new("GET", "/".to_string());
-        let real_response = HttpResponse::new(200).cookie("session", "abc123; HttpOnly");
+        let real_response = HttpResponse::new(200).cookie_raw("session", "abc123; HttpOnly");
 
         let amended = middleware
             .call_after(&request, real_response)
