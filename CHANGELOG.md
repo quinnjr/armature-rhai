@@ -9,6 +9,8 @@ Earlier changes are recorded in the workspace [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
 ### Security
 
 - `ScriptRouter` no longer returns script error details to clients: an unhandled script error yields a plain `500 Internal Server Error` body and the error is logged server-side.
