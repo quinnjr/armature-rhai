@@ -83,6 +83,7 @@ mod engine;
 mod error;
 mod handler;
 mod router;
+mod sandbox;
 mod script;
 
 #[cfg(feature = "hot-reload")]
@@ -94,6 +95,7 @@ pub use engine::{RhaiEngine, RhaiEngineBuilder};
 pub use error::{Result, RhaiError};
 pub use handler::{ScriptHandler, ScriptHandlerFn, ScriptMiddleware, script_handler};
 pub use router::{ScriptRouter, ScriptRouterBuilder};
+pub use sandbox::{SandboxedModuleResolver, harden_engine};
 pub use script::{CompiledScript, ConcurrentScriptCache, ScriptCache, ScriptLoader};
 
 #[cfg(feature = "hot-reload")]
