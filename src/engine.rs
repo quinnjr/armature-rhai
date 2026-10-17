@@ -2,6 +2,7 @@
 
 use crate::bindings::register_armature_api;
 use crate::error::{Result, RhaiError};
+use crate::sandbox::{SandboxedModuleResolver, harden_engine};
 use crate::script::{CompiledScript, ScriptCache, ScriptLoader};
 use parking_lot::RwLock;
 use rhai::{AST, Dynamic, Engine, Scope};
@@ -41,6 +42,10 @@ pub struct EngineConfig {
     pub hot_reload: bool,
     /// Script file extension.
     pub extension: String,
+    /// Allow `import` statements, resolved only inside `scripts_dir`
+    /// (see [`SandboxedModuleResolver`]). Off by default: every `import`
+    /// fails. `eval` is always disabled.
+    pub allow_imports: bool,
 }
 
 impl Default for EngineConfig {
@@ -54,6 +59,7 @@ impl Default for EngineConfig {
             max_map_size: 10_000,
             hot_reload: false,
             extension: "rhai".to_string(),
+            allow_imports: false,
         }
     }
 }
@@ -68,6 +74,20 @@ impl RhaiEngine {
     /// Create engine from configuration.
     pub fn from_config(config: EngineConfig) -> Result<Self> {
         let mut engine = Engine::new();
+
+        // No `eval`, and no filesystem imports unless explicitly enabled.
+        harden_engine(&mut engine);
+        if config.allow_imports {
+            let resolver = SandboxedModuleResolver::new(&config.scripts_dir).map_err(|e| {
+                RhaiError::ConfigError {
+                    message: format!(
+                        "cannot use scripts_dir {} as the import root: {e}",
+                        config.scripts_dir.display()
+                    ),
+                }
+            })?;
+            engine.set_module_resolver(resolver);
+        }
 
         // Apply limits
         if let Some(max_ops) = config.max_operations {
@@ -289,6 +309,15 @@ impl RhaiEngineBuilder {
         self
     }
 
+    /// Allow scripts to `import` other scripts from inside `scripts_dir`.
+    ///
+    /// Imports stay confined to `scripts_dir`: absolute paths, `..`, and
+    /// symlinks leading outside it are refused. Off by default.
+    pub fn allow_imports(mut self, enabled: bool) -> Self {
+        self.config.allow_imports = enabled;
+        self
+    }
+
     /// Build the engine.
     pub fn build(self) -> Result<RhaiEngine> {
         RhaiEngine::from_config(self.config)
@@ -362,6 +391,45 @@ mod tests {
         assert!(
             Arc::ptr_eq(&first, &second),
             "without hot-reload, a changed file must still be served from cache"
+        );
+    }
+
+    #[test]
+    fn test_engine_disables_eval() {
+        let engine = RhaiEngine::new().build().unwrap();
+        assert!(engine.engine().compile(r#"eval("1 + 1")"#).is_err());
+    }
+
+    #[test]
+    fn test_engine_rejects_imports_by_default() {
+        let temp = tempfile::TempDir::new().unwrap();
+        fs::write(temp.path().join("m.rhai"), "export const X = 1;").unwrap();
+
+        let engine = RhaiEngine::new().scripts_dir(temp.path()).build().unwrap();
+        assert!(
+            engine
+                .engine()
+                .eval::<i64>(r#"import "m" as m; m::X"#)
+                .is_err()
+        );
+
+        let engine = RhaiEngine::new()
+            .scripts_dir(temp.path())
+            .allow_imports(true)
+            .build()
+            .unwrap();
+        assert_eq!(
+            engine
+                .engine()
+                .eval::<i64>(r#"import "m" as m; m::X"#)
+                .unwrap(),
+            1
+        );
+        assert!(
+            engine
+                .engine()
+                .eval::<i64>(r#"import "../m" as m; m::X"#)
+                .is_err()
         );
     }
 }

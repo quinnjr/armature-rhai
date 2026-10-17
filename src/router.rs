@@ -141,7 +141,7 @@ impl ScriptRouter {
     }
 
     /// Handle a request.
-    #[instrument(skip(self, request), fields(method = %request.method, path = %request.path))]
+    #[instrument(skip(self, request), fields(method = %request.method, path = %request.path_only()))]
     pub async fn handle(&self, request: HttpRequest) -> HttpResponse {
         // Run before middleware
         for middleware in &self.middleware {
@@ -288,7 +288,9 @@ impl ScriptRouter {
 
     /// Handle errors.
     async fn handle_error(&self, error: RhaiError, request: &HttpRequest) -> HttpResponse {
-        tracing::error!("Script error: {}", error);
+        // Script errors can carry file paths, source snippets, and data the
+        // script was handling: log them server-side, never echo them back.
+        tracing::error!(path = %request.path_only(), "Script error: {}", error);
 
         if let Some(script_path) = &self.error_script {
             let handler = ScriptHandler::new(self.engine.clone(), script_path);
@@ -305,7 +307,7 @@ impl ScriptRouter {
         let mut resp = HttpResponse::new(500);
         resp.headers
             .insert("content-type".to_string(), "text/plain".to_string());
-        resp.with_body(format!("Internal Server Error: {}", error).into_bytes())
+        resp.with_body(b"Internal Server Error".to_vec())
     }
 
     /// Get the engine.
@@ -549,5 +551,28 @@ mod tests {
             response.status, 404,
             "/apix must not match the /api/* catch-all"
         );
+    }
+
+    #[tokio::test]
+    async fn test_script_error_details_are_not_returned_to_client() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            temp.path().join("boom.rhai"),
+            r#"throw "db password is hunter2";"#,
+        )
+        .unwrap();
+
+        let engine = RhaiEngine::new().scripts_dir(temp.path()).build().unwrap();
+        let router = ScriptRouter::new(engine).get("/boom", "boom.rhai");
+
+        let response = router
+            .handle(HttpRequest::new("GET", "/boom".to_string()))
+            .await;
+
+        assert_eq!(response.status, 500);
+        let body = String::from_utf8_lossy(response.body_ref()).into_owned();
+        assert_eq!(body, "Internal Server Error");
+        assert!(!body.contains("hunter2"));
+        assert!(!body.contains("boom.rhai"));
     }
 }
