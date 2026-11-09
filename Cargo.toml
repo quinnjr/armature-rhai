@@ -13,7 +13,7 @@ categories = ["web-programming", "development-tools"]
 
 [dependencies]
 # Core Armature
-armature-core = { version = "0.12" }
+armature-core = { version = "0.13" }
 bytes = "1.12"
 
 # Rhai scripting engine
